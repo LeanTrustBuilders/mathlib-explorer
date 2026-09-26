@@ -100,7 +100,7 @@ const BASIC_WORDS = {Eq: 'equality', Ne: '≠', Nat: 'natural numbers ℕ', Int:
   List: 'lists', Array: 'arrays', Bool: 'booleans', String: 'strings', Fin: 'Fin n', Option: 'optional values', True: 'true', False: 'false',
   Function: 'functions', Unit: 'unit', Sum: 'disjoint union', Sigma: 'dependent pairs', Quotient: 'quotients', Setoid: 'equivalence relations',
   NatCast: 'ℕ → R', IntCast: 'ℤ → R', HEq: 'equality', Decidable: '', DecidableEq: '', DecidablePred: '', DecidableRel: '', outParam: '', semiOutParam: '',
-  Inhabited: '', Nonempty: 'nonempty', id: 'identity', ite: 'if … then … else', dite: 'if … then … else', Classical: '', optParam: '', autoParam: ''};
+  Inhabited: '', Nonempty: 'nonempty', 'Classical.propDecidable': '', 'Classical.decEq': '', 'Classical.decPred': '', instDecidableEqNat: '', id: 'identity', ite: 'if … then … else', dite: 'if … then … else', Classical: '', optParam: '', autoParam: ''};
 function basicChips(nodes) {
   const seen = new Set();
   return nodes.map(n => {
@@ -250,7 +250,7 @@ async function viewDecl(name) {
     body = `
       <div class="section"><h2>What it is built from <span class="count">${(e.built || []).length}</span></h2>
         <p class="hint">The notions its definition uses directly. Open the concept map to follow them further down.</p>
-        ${(e.built || []).length ? chips(e.built) : '<p class="faint">Only basic notions.</p>'}${basic}
+        ${(e.built || []).length ? chips(e.built.slice(0, 10)) + ((e.built.length > 10) ? `<details class="more"><summary>${e.built.length - 10} more</summary>${chips(e.built.slice(10))}</details>` : '') : '<p class="faint">Only basic notions.</p>'}${basic}
         <p><button class="btn" id="open-map">Show the concept map</button></p><div id="map-slot"></div></div>
       ${e.nExamples ? `<div class="section"><h2>Examples <span class="count">${e.nExamples.toLocaleString()}</span></h2><p class="hint">Objects Mathlib shows to be ${esc(article(e.title || shortName(e.name)))}: the instances of this class.</p>${list(e.examples, e.nExamples, '')}</div>` : ''}
       <div class="two">
@@ -343,7 +343,8 @@ async function drawMap(slot, rootId, mode) {
   const layout = () => {
     cy.layout({name: window.cytoscapeDagre ? 'dagre' : 'breadthfirst', rankDir: 'LR', nodeSep: 10, rankSep: 60, directed: true, animate: false}).run();
     cy.fit(undefined, 24);
-    if (cy.zoom() < 0.75) { cy.zoom(0.75); cy.center(cy.getElementById(String(rootId))); cy.panBy({x: cy.width() * 0.35, y: 0}); }
+    // Too wide to read whole: readable size, the notion at the left edge, what it rests on to its right.
+    if (cy.zoom() < 0.75) { cy.zoom(0.75); cy.center(cy.getElementById(String(rootId))); cy.panBy({x: -cy.width() * 0.36, y: 0}); }
   };
   layout();
   cy.on('tap', 'node', async ev => { await expand(+ev.target.id(), 1); layout(); });

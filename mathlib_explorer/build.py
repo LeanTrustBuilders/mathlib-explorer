@@ -43,7 +43,7 @@ TITLES = {"RingTheory": "Ring theory", "NumberTheory": "Number theory", "Categor
           "InformationTheory": "Information theory", "ModelTheory": "Model theory", "KleeneAlgebra": "Kleene algebra",
           "SpecialFunctions": "Special functions", "InnerProductSpace": "Inner product spaces",
           "NormedSpace": "Normed spaces", "Order": "Order theory", "Probability": "Probability theory",
-          "Data": "Data structures", "Topology": "Topology", "Analysis": "Analysis", "Algebra": "Algebra",
+          "Data": "Numbers and basic structures", "Topology": "Topology", "Analysis": "Analysis", "Algebra": "Algebra",
           "Combinatorics": "Combinatorics", "Geometry": "Geometry", "Dynamics": "Dynamical systems",
           "Logic": "Logic", "Computability": "Computability", "Condensed": "Condensed mathematics",
           "Tactic": "Tactics (Lean's proof automation)", "Lean": "Lean metaprogramming", "Util": "Utilities",
@@ -268,7 +268,7 @@ def build(opt: Options) -> dict:
                 e["main"] = main_named[d.name]
             if g.concept[i]:
                 built = g.built_from(i)
-                e["built"] = [x for x in built if not g.basic[x]]
+                e["built"] = g.rank([x for x in built if not g.basic[x]])
                 e["basic"] = [x for x in built if g.basic[x]]
                 e["facts"], e["nFacts"] = ids(rev.facts[i], L), len(rev.facts[i])
                 e["examples"], e["nExamples"] = ids(rev.examples[i], L), len(rev.examples[i])
@@ -280,7 +280,7 @@ def build(opt: Options) -> dict:
                 if concl:
                     e["concl"] = [concl[:3000], [r for r in stmt.get("conclusionRefs", []) if r[1] <= 3000]]
                 about = g.about(i)
-                e["about"] = [x for x in about if not g.basic[x]]
+                e["about"] = g.rank([x for x in about if not g.basic[x]])
                 e["basic"] = [x for x in about if g.basic[x]]
                 uses = g.proof_uses(i)
                 steps = [x for x in uses if not g.routine[x]]
