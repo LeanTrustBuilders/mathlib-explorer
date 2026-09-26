@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mathlib-explorer"
+version = "0.1.0"
+description = "A website to discover and understand Mathlib, for readers who know mathematics but not Lean"
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+dependencies = ["evidence-core[yaml] @ git+https://github.com/LeanTrustBuilders/evidence-core"]
+
+[project.scripts]
+mathlib-explorer = "mathlib_explorer.__main__:main"
+
+[tool.setuptools]
+packages = ["mathlib_explorer"]
+
+[tool.setuptools.package-data]
+mathlib_explorer = ["static/*"]
