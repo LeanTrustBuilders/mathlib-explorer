@@ -47,9 +47,36 @@ TITLES = {"RingTheory": "Ring theory", "NumberTheory": "Number theory", "Categor
           "Combinatorics": "Combinatorics", "Geometry": "Geometry", "Dynamics": "Dynamical systems",
           "Logic": "Logic", "Computability": "Computability", "Condensed": "Condensed mathematics",
           "Tactic": "Tactics (Lean's proof automation)", "Lean": "Lean metaprogramming", "Util": "Utilities",
-          "Testing": "Testing", "Control": "Control structures", "Deprecated": "Deprecated"}
+          "Testing": "Testing", "Control": "Control structures", "Deprecated": "Deprecated", "Init": "Foundations",
+          "Basic": "Basics",
+          # Some folders below, whose names do not read as a subject.
+          "CStarAlgebra": "C*-algebras", "RCLike": "ℝ or ℂ", "ODE": "Differential equations", "Normed": "Normed groups and spaces",
+          "Rat": "Rational numbers", "Real": "Real numbers", "Complex": "Complex numbers", "Matrix": "Matrices",
+          "Fourier": "Fourier analysis", "Convex": "Convexity", "Meromorphic": "Meromorphic functions",
+          "Analytic": "Analytic functions", "Distribution": "Distributions", "BoxIntegral": "Box integrals",
+          "VonNeumannAlgebra": "Von Neumann algebras", "LocallyConvex": "Locally convex spaces",
+          "AbsoluteValue": "Absolute values", "FunctionalSpaces": "Function spaces", "Nat": "Natural numbers",
+          "Int": "Integers", "ENNReal": "Extended nonnegative reals", "NNReal": "Nonnegative reals", "EReal": "Extended reals",
+          "Finset": "Finite sets", "Multiset": "Multisets", "List": "Lists", "Set": "Sets", "Fintype": "Finite types",
+          "Polynomial": "Polynomials", "MvPolynomial": "Multivariate polynomials", "PowerSeries": "Power series",
+          "Finsupp": "Finitely supported functions", "ZMod": "Integers modulo n", "PNat": "Positive natural numbers",
+          "Quaternion": "Quaternions", "Sym": "Symmetric powers", "Bundle": "Bundles", "Manifold": "Manifolds",
+          "LSeries": "L-series", "ModularForms": "Modular forms", "NumberField": "Number fields", "Padics": "p-adic numbers",
+          "Cyclotomic": "Cyclotomic fields", "SimpleGraph": "Graph theory (simple graphs)", "Additive": "Additive combinatorics",
+          "SpecialFunctions": "Special functions", "Calculus": "Calculus", "Asymptotics": "Asymptotics",
+          "InnerProductSpace": "Inner product spaces", "Martingale": "Martingales", "Kernel": "Kernels",
+          "Integral": "Integration", "Measure": "Measures", "Function": "Functions", "Group": "Groups", "Ring": "Rings",
+          "Module": "Modules", "Field": "Fields", "Order": "Order theory", "Category": "Categories", "Homology": "Homology",
+          "Sheaf": "Sheaves", "Scheme": "Schemes", "Limits": "Limits", "Monoidal": "Monoidal categories",
+          "Algebra": "Algebra", "Lie": "Lie algebras", "Star": "Star algebras", "BigOperators": "Sums and products",
+          "Ideal": "Ideals", "Localization": "Localization", "Valuation": "Valuations", "DedekindDomain": "Dedekind domains",
+          "Perfectoid": "Perfectoid rings", "Galois": "Galois theory", "Sylow": "Sylow theory", "Perm": "Permutations",
+          "Probability": "Probability theory", "Distributions": "Distributions", "Independence": "Independence",
+          "Euclidean": "Euclidean geometry", "Metric": "Metric spaces", "MetricSpace": "Metric spaces",
+          "UniformSpace": "Uniform spaces", "Compactness": "Compactness", "Connected": "Connectedness",
+          "Homotopy": "Homotopy", "ContinuousMap": "Continuous maps", "Instances": "Examples"}
 #: Top-level directories that are about Lean rather than mathematics: kept, listed last.
-TOOLING = {"Tactic", "Lean", "Util", "Testing", "Control", "Deprecated", "Std"}
+TOOLING = {"Tactic", "Lean", "Util", "Testing", "Control", "Deprecated", "Std", "Init"}
 
 
 @dataclass
@@ -80,7 +107,8 @@ def build(opt: Options) -> dict:
     docs_dir = opt.mathlib / "docs"
 
     # --- what Mathlib says of itself -------------------------------------------------------------
-    mdocs = docs_mod.module_docs(ds)
+    resolver = docs_mod.Resolver(ds)
+    mdocs = {m["name"]: docs_mod.module_doc(ds, m, resolver) for m in ds.modules}
     overview = catalogs.topic_tree(docs_dir / "overview.yaml", ds, "Overview") if (docs_dir / "overview.yaml").exists() else None
     undergrad = catalogs.topic_tree(docs_dir / "undergrad.yaml", ds, "Undergraduate curriculum") \
         if (docs_dir / "undergrad.yaml").exists() else None
@@ -153,7 +181,7 @@ def build(opt: Options) -> dict:
 
     def freeze(node) -> dict:
         kids = sorted(node["children"].values(), key=lambda c: (c["key"].split(".")[0] in TOOLING, c["title"].lower()))
-        frozen = [freeze(c) for c in kids]
+        frozen = [freeze(c) for c in kids if c["decls"]]
         members = [d for m in node["modules"] for d in listed_by_module.get(modules[m], [])]
         concepts = [d.id for d in members if g.concept[d.id]] + [x for c in frozen for x in c["keyConcepts"]]
         results = [d.id for d in members if g.result[d.id]] + [x for c in frozen for x in c["keyResults"]]
@@ -218,7 +246,8 @@ def build(opt: Options) -> dict:
             src = ds.facet_row("source", d.name) or {}
             sig = ds.facet_row("signature", d.name) or {}
             stmt = ds.facet_row("statement", d.name) or {}
-            e = {"id": i, "name": d.name, "title": title_of(d.name), "kind": kind_of(d), "doc": docstrings.get(d.name, ""),
+            doc = docstrings.get(d.name, "")
+            e = {"id": i, "name": d.name, "title": title_of(d.name), "kind": kind_of(d), "doc": doc,
                  "sig": [sig.get("text", ""), sig.get("refs", [])] if sig else None,
                  "line": [src["start"][0], src["end"][0]] if src else None}
             if stmt.get("fields"):
@@ -227,6 +256,9 @@ def build(opt: Options) -> dict:
                                for f in stmt["fields"]]
             if stmt.get("value") and not d.is_prop:
                 e["value"] = [stmt["value"][:3000], [r for r in stmt.get("valueRefs", []) if r[1] <= 3000]]
+            names = resolver.names_in(doc, d.module) if "`" in doc else {}
+            if names:
+                e["names"] = names
             links = docs_mod.links(ds, d.name).as_json()
             if links:
                 e["links"] = links
@@ -306,7 +338,7 @@ def build(opt: Options) -> dict:
     def resolve_list(listing):
         return [{"id": e.meta.get("id"), "title": e.title, "decls": [ds.by_name[x].id for x in e.found],
                  "missing": [x for x in e.decls if x not in e.found],
-                 **{k: e.meta[k] for k in ("authors", "date", "wikidata", "url", "note", "statement") if e.meta.get(k)}}
+                 **{k: e.meta[k] for k in ("authors", "date", "wikidata", "url", "note", "statement", "links") if e.meta.get(k)}}
                 for e in listing]
     write(data / "catalogs.json", {"overview": resolve_tree(overview) if overview else None,
                                    "undergrad": resolve_tree(undergrad) if undergrad else None,
@@ -326,11 +358,22 @@ def build(opt: Options) -> dict:
         "subjects": subjects, "modules": module_table,
         "importedBy": {str(k): v for k, v in imported_by.items()},
         "map": {"areas": [{"key": a, "title": humanize(a), "size": area_size[a], "tooling": a in TOOLING} for a in areas],
-                "edges": [[a, b, w] for (a, b), w in sorted(area_edges.items(), key=lambda kv: -kv[1])]},
+                "edges": map_edges(area_edges, [a for a in areas if a not in TOOLING])},
         "shards": {"nodes": NODE_SHARD, "names": NAME_SHARDS},
     }
     write(data / "site.json", site)
     return {**stats, "search": len(search), "nodes": len(decls)}
+
+
+def map_edges(edges: dict, areas: list[str], top: int = 60) -> list:
+    """The Map's arrows: the strongest overall, and each subject's strongest, so that none is alone."""
+    ranked = sorted(((a, b, w) for (a, b), w in edges.items() if a in areas and b in areas), key=lambda e: -e[2])
+    keep = set(ranked[:top])
+    for a in areas:
+        own = [e for e in ranked if e[0] == a or e[1] == a]
+        if own:
+            keep.add(own[0])
+    return [list(e) for e in sorted(keep, key=lambda e: -e[2])]
 
 
 def hash_name(name: str) -> int:

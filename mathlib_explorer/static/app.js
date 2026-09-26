@@ -46,7 +46,7 @@ const moduleRow = mid => S.modules[mid] && {id: mid, name: S.modules[mid][0], ti
 
 /* ---------- text ---------- */
 // Docstrings: Markdown with LaTeX math; a name in backquotes becomes a link to it.
-function md(text, inline = false) {
+function md(text, inline = false, names = null) {
   if (!text) return '';
   const math = [];
   let t = text.replace(/```[\s\S]*?```|`[^`\n]*`/g, m => m.replace(/\$/g, '\u0000'));   // no math inside code
@@ -58,8 +58,12 @@ function md(text, inline = false) {
     const [tex, display] = math[+k];
     try { return katex.renderToString(tex, {displayMode: display, throwOnError: false}); } catch (e) { return esc(tex); }
   });
-  return html.replace(/<code>([A-Za-z_][\w.'₀-₉!?]*)<\/code>/g, (m, name) => /[A-Z.]/.test(name)
-    ? `<a class="codelink" href="#/d/${encodeURIComponent(name)}" data-name="${esc(name)}"><code>${name}</code></a>` : m);
+  // A name in backquotes links to the declaration the tools resolved it to.
+  if (!names) return html;
+  return html.replace(/<code>([^<]+)<\/code>/g, (m, written) => {
+    const name = names[written.replace(/&amp;/g, '&').replace(/&#39;/g, "'")];
+    return name ? `<a class="codelink" href="#/d/${encodeURIComponent(name)}" data-name="${esc(name)}"><code>${written}</code></a>` : m;
+  });
 }
 // Lean text, with every constant it names explained on hover and linked.
 function lean(text, refs) {
@@ -174,11 +178,11 @@ async function viewSubject(key) {
   main.innerHTML = `<div class="crumbs">${crumbs.join('<span class="sep">›</span>')}</div>
     <span class="kind subject">Subject</span><h1>${esc(s.title)}</h1>
     <p class="muted">${plural(s.decls, 'declaration')}${s.children.length ? ` · ${plural(s.children.length, 'subtopic')}` : ''}${files.length ? ` · ${plural(files.length, 'file')}` : ''}</p>
-    ${s.children.length ? `<div class="section"><h2>Subtopics</h2><div class="cards">${s.children.map(c => `<a class="card" href="#/s/${encodeURIComponent(c.key)}"><h3>${esc(c.title)}</h3><p class="num">${plural(c.decls, 'declaration')}</p></a>`).join('')}</div></div>` : ''}
     <div class="two">
       <div class="section"><h2>Main notions</h2><p class="hint">The concepts of this subject that most of Mathlib builds on.</p><ul class="list">${concepts.map(itemHtml).join('')}</ul></div>
       <div class="section"><h2>Main results</h2><p class="hint">Its most used, documented or famous theorems.</p><ul class="list">${results.map(itemHtml).join('')}</ul></div>
     </div>
+    ${s.children.length ? `<div class="section"><h2>Subtopics</h2><div class="chips">${[...s.children].sort((a, b) => b.decls - a.decls).map(c => `<a class="chip" href="#/s/${encodeURIComponent(c.key)}">${esc(c.title)} <span class="faint">${c.decls.toLocaleString()}</span></a>`).join('')}</div></div>` : ''}
     ${files.length ? `<div class="section"><h2>Files</h2><ul class="list">${files.map(f => `<li><a href="#/m/${encodeURIComponent(f.name)}"><span class="item-title">${esc(f.title)}</span><span class="item-sub">${esc(f.name)} · ${f.decls}</span></a>${f.summary ? `<div class="muted" style="font-size:14px">${md(f.summary, true)}</div>` : ''}</li>`).join('')}</ul></div>` : ''}`;
 }
 
@@ -196,7 +200,7 @@ async function viewModule(name) {
   main.innerHTML = `${crumbsFor(name)}
     <span class="kind file">File</span><h1>${esc(row.title)}</h1>
     <div class="leanname">${esc(name)} · <a href="${esc(m.url)}">source on GitHub</a></div>
-    ${m.docText ? `<div class="section"><div class="prose">${md(m.docText.replace(/^\s*#\s.*$/m, ''))}</div></div>` : '<p class="empty">This file has no description.</p>'}
+    ${m.docText ? `<div class="section"><div class="prose">${md(m.docText.replace(/^\s*#\s.*$/m, ''), false, doc.names)}</div></div>` : '<p class="empty">This file has no description.</p>'}
     ${doc.tags && doc.tags.length ? `<div class="section"><h3>Keywords</h3><div class="chips">${doc.tags.map(t => `<a class="chip" href="#/search/${encodeURIComponent(t)}">${esc(t)}</a>`).join('')}</div></div>` : ''}
     ${doc.references && doc.references.length ? `<div class="section"><h3>References</h3><ul class="list">${doc.references.map(k => books[k] ? `<li><a href="#/book/${encodeURIComponent(k)}">${esc(books[k].cite)}</a></li>` : `<li class="faint">${esc(k)}</li>`).join('')}</ul></div>` : ''}
     <div class="two">
@@ -271,7 +275,7 @@ async function viewDecl(name) {
     <h1>${title}</h1>
     <div class="leanname">${esc(e.name)} <button id="copy" title="Copy the Lean name">copy</button></div>
     ${badges.length ? `<div class="badges">${badges.join('')}</div>` : ''}
-    ${e.doc ? `<div class="section prose">${md(e.doc)}</div>` : e.main ? `<div class="section prose">${md(e.main)}</div><p class="faint" style="font-size:13px">From the description of its file.</p>` : isResult ? '' : '<p class="faint">Mathlib gives no explanation of it in words.</p>'}
+    ${e.doc ? `<div class="section prose">${md(e.doc, false, e.names)}</div>` : e.main ? `<div class="section prose">${md(e.main)}</div><p class="faint" style="font-size:13px">From the description of its file.</p>` : isResult ? '' : '<p class="faint">Mathlib gives no explanation of it in words.</p>'}
     <div class="section"><h3>In Lean</h3>
       ${e.sig ? `<div class="lean">${lean(e.sig[0], e.sig[1])}${fieldsHtml(e.fields)}</div>` : ''}
       ${e.value ? `<details class="more"><summary>How it is defined</summary><div class="lean">${lean(e.value[0], e.value[1])}</div></details>` : ''}
@@ -356,16 +360,22 @@ async function viewSearch(q) {
   const tokens = q.toLowerCase().split(/\s+/).filter(Boolean);
   if (!tokens.length) { main.innerHTML = '<h1>Search</h1><p class="empty">Type a concept, a theorem or a subject above.</p>'; return; }
   const plain = s => String(s || '').toLowerCase().replace(/[`*$\\{}]/g, '');
+  const need = Math.max(1, Math.ceil(tokens.length * 0.5));
+  const re = tokens.map(t => new RegExp('\\b' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  // Each word of the query found in the title (as a word, best), in the Lean name, or in the file's
+  // keywords; most of the words must be found; then the more important first.
   const score = (title, extra, name, imp) => {
     const t = plain(title), x = plain(extra), nm = name.toLowerCase();
-    let s = 0;
-    for (const tok of tokens) {
-      const inTitle = t.includes(tok), inExtra = x.includes(tok), inName = nm.includes(tok);
-      if (!inTitle && !inExtra && !inName) return -1;
-      s += (inTitle ? (new RegExp('\\b' + tok.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(t) ? 6 : 3) : 0) + (inName ? 2 : 0) + (inExtra ? 1 : 0);
-    }
-    if (t === tokens.join(' ')) s += 20;
-    return s + imp;
+    let s = 0, found = 0;
+    tokens.forEach((tok, k) => {
+      const w = re[k].test(t) ? 6 : t.includes(tok) ? 3 : nm.includes(tok) ? 2 : x.includes(tok) ? 1 : 0;
+      if (w) found++;
+      s += w;
+    });
+    if (found < need) return -1;
+    if (found === tokens.length) s += 8;
+    if (t.replace(/[.\s]+$/, '') === tokens.join(' ')) s += 20;
+    return s + 0.4 * imp - (t.length > 90 ? 2 : 0);
   };
   const decls = [];
   for (const r of searchRows) { const s = score(r[1], r[2], r[4] || '', r[3]); if (s >= 0) decls.push([s, r[0]]); }
@@ -400,7 +410,7 @@ async function viewFamous(which = '100') {
     ${rows.map(r => `<tr><td class="faint">${which === '100' ? esc(r.id) : r.wikidata ? `<a href="${wikipedia(r.wikidata)}" title="Wikipedia">W</a>` : ''}</td>
       <td>${esc(r.title)}</td>
       <td>${r.decls.length ? r.decls.map(i => names.get(i)).filter(Boolean).map(n => `<a href="#/d/${encodeURIComponent(n.name)}" class="mono" style="font-size:12.5px">${esc(shortName(n.name))}</a>`).join('<br>')
-        : r.missing && r.missing.length ? `<span class="status no">elsewhere</span>` : r.statement ? '<span class="status no">stated only</span>' : '<span class="status no">not yet</span>'}</td>
+        : (r.missing && r.missing.length) || r.url || r.links ? `<span class="status no" title="Formalized outside Mathlib, or under a name it no longer has">elsewhere</span>` : r.statement ? '<span class="status no">stated only</span>' : '<span class="status no">not yet</span>'}</td>
       <td class="muted" style="font-size:13.5px">${esc(r.authors || '')}${r.date ? `, ${esc(r.date)}` : ''}</td></tr>`).join('')}
     </tbody></table>`;
 }

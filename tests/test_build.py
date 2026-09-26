@@ -90,7 +90,8 @@ class Build(unittest.TestCase):
     def test_directories_read_as_subjects(self):
         self.assertEqual(humanize("NumberTheory"), "Number theory")
         self.assertEqual(humanize("SpecialFunctions"), "Special functions")
-        self.assertEqual(humanize("LSeries"), "L series")
+        self.assertEqual(humanize("LSeries"), "L-series")
+        self.assertEqual(humanize("AperiodicOrder"), "Aperiodic order")
 
 
 if __name__ == "__main__":
