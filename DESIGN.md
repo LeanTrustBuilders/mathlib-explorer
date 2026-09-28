@@ -87,8 +87,8 @@ computed.
 
 - **extractor** (`trust-extract` and its scripts): the dataset of Mathlib (S2): declarations, their
   docstrings, statements taken apart with the constant each identifier names (for hovers), source
-  ranges, `sorry` and axioms, the meaning, statement and proof graphs; `examples.py` (the `example`s)
-  and `attributes.py` (the attributes, read from the sources).
+  ranges, `sorry` and axioms, the meaning, statement and proof graphs; and `attributes.py` (the
+  attributes, read from the sources).
 - **evidence-core**: `docs` (module docstrings read as their sections, their names resolved; the
   attributes read as links), `catalogs` (Mathlib's catalogues and bibliography, matched against the
   dataset), `graphs` (concepts and results, what each is built from, is about and uses, and the

@@ -52,5 +52,5 @@ python3 -m unittest discover -s tests
 ```
 
 The dataset is `trust-extract extract --root Mathlib`, run in a built checkout of Mathlib (with
-`lake env`), followed by the extractor's `scripts/examples.py` and `scripts/attributes.py`; or download
+`lake env`), followed by the extractor's `scripts/attributes.py`; or download
 it from this repository's releases.

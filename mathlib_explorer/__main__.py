@@ -12,7 +12,7 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="mathlib-explorer", description="Build the Mathlib Explorer site.")
     sub = p.add_subparsers(dest="cmd", required=True)
     b = sub.add_parser("build", help="build the site")
-    b.add_argument("--dataset", type=Path, required=True, help="Mathlib's dataset (S2), with the attributes and examples facets")
+    b.add_argument("--dataset", type=Path, required=True, help="Mathlib's dataset (S2), with the attributes facet")
     b.add_argument("--mathlib", type=Path, required=True, help="a checkout of Mathlib at the dataset's commit (for docs/)")
     b.add_argument("--out", type=Path, required=True, help="where to write the site")
     b.add_argument("--repo", default="leanprover-community/mathlib4", help="Mathlib's repository, for links to the sources")
