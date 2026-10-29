@@ -14,7 +14,9 @@ browse it by subject, and open any concept or theorem to read:
   it, and what is built on it;
 - for a theorem, **what it is about**, **how it is proved** (the proof map, which unfolds step by step,
   routine steps counted apart), and what it is used to prove;
-- where it is also described: Wikipedia, the Stacks project, Kerodon, the books its file cites.
+- where it is also described: Wikipedia, the Stacks project, Kerodon, the books its file cites;
+- what readers said of it, in the [Mathlib store](https://github.com/LeanTrustBuilders/mathlib-evidence): reviews (whether it is the notion, or says what, it
+  should), problems and questions, each signed; and the buttons to add one.
 
 And the big picture: Mathlib's famous theorems (the 100 and the 1000+ lists), how much of an
 undergraduate curriculum it covers, its own overview, its bibliography, and a map of how its subjects
@@ -24,7 +26,7 @@ build on one another.
 
 ## How it is built
 
-Everything the site shows is Mathlib's own, computed by the
+Everything the site shows is Mathlib's own, except the readers' records, and is computed by the
 [LeanTrustBuilders](https://github.com/LeanTrustBuilders) tools; this repository only lays it out.
 
 1. [trust-extract](https://github.com/LeanTrustBuilders/extractor) reads the compiled library into a
@@ -35,18 +37,25 @@ Everything the site shows is Mathlib's own, computed by the
    Mathlib's catalogues (`docs/overview.yaml`, `undergrad.yaml`, `100.yaml`, `1000.yaml`,
    `references.bib`), and summarizes the graphs for readers: concepts and results, what each is built
    from, is about and uses, and the reverse, ranked, with basic notions and routine steps set apart.
-3. `mathlib_explorer.build` writes that as JSON, sharded so that a page loads only what it shows;
-   `mathlib_explorer/static/` is the page.
+3. The readers' records are the [Mathlib store](https://github.com/LeanTrustBuilders/mathlib-evidence)'s (S3, written from its GitHub issues by
+   [evidence-store](https://github.com/LeanTrustBuilders/evidence-store)), with those of the stores
+   it imports. evidence-core resolves them against the dataset: each with its status against this
+   version of its declaration and its state, and each declaration with where it stands.
+4. `mathlib_explorer.build` writes that as JSON, sharded so that a page loads only what it shows;
+   `mathlib_explorer/static/` is the page, which opens the store's issue forms filled in for a
+   declaration.
 
 The [Site](.github/workflows/site.yml) workflow follows Mathlib's newest release tag that
-trust-extract supports, weekly. Mathlib's dataset (about 314,000 declarations) is kept as the release
+trust-extract supports, weekly, and rebuilds the site within the hour when the Mathlib store moves.
+Mathlib's dataset (about 314,000 declarations) is kept as the release
 `mathlib-dataset-<commit>` of this repository.
 
 ## Locally
 
 ```bash
-pip install .                      # with evidence-core
-mathlib-explorer build --dataset path/to/dataset --mathlib path/to/mathlib4 --out _site
+pip install .                      # with evidence-core and evidence-store
+mathlib-explorer build --dataset path/to/dataset --mathlib path/to/mathlib4 --out _site \
+  --evidence path/to/mathlib-evidence/evidence --evidence-repo LeanTrustBuilders/mathlib-evidence
 python3 -m http.server -d _site
 python3 -m unittest discover -s tests
 ```

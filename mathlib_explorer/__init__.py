@@ -2,4 +2,4 @@
 LeanTrustBuilders tools compute (see DESIGN.md)."""
 from .build import Options, build
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

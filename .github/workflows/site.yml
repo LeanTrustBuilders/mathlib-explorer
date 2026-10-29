@@ -4,9 +4,12 @@ name: Site
 # has a release for, and publishes it. The dataset (S2) of that commit is extracted by the extractor's
 # action, with the examples and attributes facets, and kept as the release mathlib-dataset-<commit12>
 # of this repository, so that a rebuild of the site (after a change to it) does not extract again.
+# The pages show the records of the Mathlib evidence store (STORE), read when the site is built: an
+# hourly run rebuilds the site when the store has moved since.
 on:
   schedule:
     - cron: '20 3 * * 1'
+    - cron: '35 * * * *'
   workflow_dispatch:
     inputs:
       ref:
@@ -29,8 +32,33 @@ concurrency:
   group: site
   cancel-in-progress: false
 
+env:
+  STORE: LeanTrustBuilders/mathlib-evidence
+
 jobs:
+  changed:
+    # The hourly run builds only when the store is at another commit than the published site shows;
+    # every other run builds.
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.store.outputs.build }}
+    steps:
+      - id: store
+        env:
+          HOURLY: ${{ github.event_name == 'schedule' && github.event.schedule == '35 * * * *' }}
+          SITE: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+        run: |
+          build=true
+          if [ "$HOURLY" = true ]; then
+            now=$(git ls-remote "https://github.com/$STORE" HEAD | cut -f1)
+            shown=$(curl -sSfL "$SITE/data/site.json" | jq -r '.store.commit // ""' || true)
+            echo "$STORE at ${now:-?}; the site shows ${shown:-no store}"
+            if [ -n "$now" ] && [ "$now" = "$shown" ]; then build=false; fi
+          fi
+          echo "build=$build" >> "$GITHUB_OUTPUT"
   build:
+    needs: changed
+    if: needs.changed.outputs.build == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 240
     env:
@@ -62,7 +90,11 @@ jobs:
           echo "Mathlib $REF = $commit, $(cat "$RUNNER_TEMP/mathlib/lean-toolchain")"
           { echo "REF=$REF"; echo "COMMIT=$commit"; echo "TAG=mathlib-dataset-${commit:0:12}"; } >> "$GITHUB_ENV"
       - name: mathlib-explorer, evidence-core and evidence-store
-        run: pip install -q . "git+https://github.com/LeanTrustBuilders/evidence-store@main"
+        run: pip install -q .
+      - name: The evidence store, and the stores it imports
+        run: |
+          git clone -q --depth 1 "https://github.com/$STORE" "$RUNNER_TEMP/store"
+          evidence-store fetch-imports --store "$RUNNER_TEMP/store/evidence" --out "$RUNNER_TEMP/imports"
       - run: python3 -m unittest discover -s tests
       - name: The published dataset, if there is one
         id: published
@@ -99,7 +131,8 @@ jobs:
       - name: Build the site
         run: |
           dataset="${{ steps.published.outputs.dataset || steps.extract.outputs.dataset }}"
-          mathlib-explorer build --dataset "$dataset" --mathlib "$RUNNER_TEMP/mathlib" --out _site
+          mathlib-explorer build --dataset "$dataset" --mathlib "$RUNNER_TEMP/mathlib" --out _site \
+            --evidence "$RUNNER_TEMP/store/evidence" --evidence-repo "$STORE" --imports "$RUNNER_TEMP/imports"
           du -sh _site
       - uses: actions/upload-pages-artifact@v3
         with:

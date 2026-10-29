@@ -17,7 +17,9 @@ to:
 4. **understand a theorem**: what it says, what it is about, how its proof goes, what it is used for;
 5. **get the big picture**: the famous theorems, how much of an undergraduate curriculum is there,
    how the subjects depend on each other;
-6. **connect it to what they already know**: a book, the Stacks project, Wikipedia.
+6. **connect it to what they already know**: a book, the Stacks project, Wikipedia;
+7. **say whether it is right**: whether a definition is the notion it should be, whether a theorem
+   says what it should; or ask.
 
 ## Principles
 
@@ -36,6 +38,10 @@ to:
   other.
 - **Say where things come from.** Every title, keyword and link is Mathlib's own: its docstrings,
   its catalogues, its attributes.
+- **Readers' judgements are theirs.** Reviews, problems and questions come from the
+  [Mathlib store](https://github.com/LeanTrustBuilders/mathlib-evidence), set apart from what Mathlib says, each signed by the GitHub account that wrote
+  it, an AI agent's marked as such, and tied to the version of the declaration it was made on.
+  Only people's reviews make a declaration "reviewed".
 
 ## What Mathlib gives us
 
@@ -55,7 +61,8 @@ to:
 ## Pages
 
 - **Home**: the search box, and ways in: Subjects, Famous theorems, Undergraduate curriculum, Books
-  and papers, the Map; a few sentences on what Mathlib is and how to read a page.
+  and papers, the Map; the newest reviews and questions; a few sentences on what Mathlib is and how
+  to read a page.
 - **Search**: by words, as a mathematician would type them: titles (catalogue names, docstrings'
   first sentences, module titles), keywords (module tags), Lean names. Results come grouped (concepts,
   results, subjects) with their subject.
@@ -67,10 +74,10 @@ to:
 - **Concept** (a definition, structure, class, inductive type): title and explanation; external links
   (Wikipedia, Stacks, Kerodon); the Lean definition; *what it is built from* (concept map); examples
   (its instances, for a class); *what Mathlib proves about it*; *built on it* (concepts that use it);
-  its neighbours in the file.
+  its neighbours in the file; its reviews, problems and questions, and buttons to add one.
 - **Result** (a theorem): title and explanation; the statement in Lean; *what it is about*; *how it
   is proved* (proof map, expandable); *used to prove*; whether it is a famous theorem, with who
-  formalized it and when.
+  formalized it and when; its reviews, problems and questions, and buttons to add one.
 - **Famous theorems**: the 100 and the 1000+ lists, formalized or not, linked.
 - **Undergraduate curriculum** and **Overview**: Mathlib's two subject trees, each concept linked or
   marked "not yet".
@@ -92,9 +99,12 @@ computed.
 - **evidence-core**: `docs` (module docstrings read as their sections, their names resolved; the
   attributes read as links), `catalogs` (Mathlib's catalogues and bibliography, matched against the
   dataset), `graphs` (concepts and results, what each is built from, is about and uses, and the
-  reverse; importance; basic notions), `source` (text from the checkout).
+  reverse; importance; basic notions), `source` (text from the checkout); and the readers' records
+  (`Evidence`, `views`: each record's status against this version and its state, where each
+  declaration stands).
+- **evidence-store**: the Mathlib store's issue forms, which turn what readers write into records.
 - **mathlib-explorer** (this repository): `mathlib_explorer.build` asks those for everything a page
   shows and writes it as JSON, sharded so that a page loads only what it shows; `static/` is the page.
 
 The site follows Mathlib's newest commit that trust-extract has a release for, and is rebuilt when it
-moves.
+moves, or when the Mathlib store does.

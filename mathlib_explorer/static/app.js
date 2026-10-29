@@ -148,10 +148,19 @@ async function viewHome() {
       <a class="card" href="#/books"><h3>Books and papers</h3><p>${plural(c.books || 0, 'reference')} Mathlib's files cite, and where each is used.</p></a>
       <a class="card" href="#/map"><h3>The map</h3><p>How the subjects of Mathlib build on one another.</p></a>
     </div>
+    ${await recentHtml()}
     <h2>Subjects</h2>
     <div class="cards">${top.map(s => `<a class="card" href="#/s/${encodeURIComponent(s.key)}"><h3>${esc(s.title)}</h3><p class="num">${plural(s.decls, 'declaration')}</p></a>`).join('')}</div>
     <h2>How to read a page</h2>
     <p class="prose">Every concept and theorem has a page. It starts with what it means, in words, then shows it in Lean. Two maps answer two questions: the <b>concept map</b> shows what a notion is built from (or, for a theorem, what it talks about); the <b>proof map</b> shows the results a proof uses, which you can unfold step by step. Notions so common they are used everywhere, like equality or the natural numbers, are listed apart as <i>basic notions</i>, and the routine steps of proofs are counted rather than listed. See <a href="#/about">About</a> for the words Lean uses.</p>`;
+}
+async function recentHtml() {
+  const recent = (S.store && S.store.recent) || [];
+  if (!recent.length) return '';
+  const got = new Map((await nodesOf(recent.map(r => r[0]))).map(x => [x.id, x]));
+  return `<h2>Recent reviews and questions</h2>
+    <p class="hint">The newest reviews, problems and questions in ${storeLink(S.store)}, made by readers of Mathlib.</p>
+    <ul class="list">${recent.map(([id, , kind, verdict, at, who]) => got.get(id) ? `<li><a href="#/d/${encodeURIComponent(got.get(id).name)}" data-id="${id}"><span class="item-title">${label(got.get(id))}</span><span class="item-sub">${esc(RECORD_KIND[kind === 'review' ? verdict : kind] || kind)} · ${esc(who)} · ${day(at)}</span></a></li>` : '').join('')}</ul>`;
 }
 function countTree(t) {
   let all = 0, done = 0;
@@ -239,7 +248,8 @@ async function viewDecl(name) {
     ...(e.famous || []).filter(f => f.wikidata && !(links.wikidata || []).includes(f.wikidata)).map(f => `<span class="badge"><a href="${wikipedia(f.wikidata)}">Wikipedia ↗</a></span>`),
     ...(links.stacks || []).map(t => `<span class="badge"><a href="https://stacks.math.columbia.edu/tag/${encodeURIComponent(t.tag)}">Stacks project, tag ${esc(t.tag)} ↗</a>${t.comment ? ` <span class="faint">${esc(t.comment)}</span>` : ''}</span>`),
     ...(links.kerodon || []).map(t => `<span class="badge"><a href="https://kerodon.net/tag/${encodeURIComponent(t.tag)}">Kerodon, tag ${esc(t.tag)} ↗</a></span>`),
-  ];
+    standingBadge(e),
+  ].filter(Boolean);
   const title = e.title ? md(e.title, true) : e.concl && isResult ? `<span class="mono" style="font-size:.8em">${lean(e.concl[0], e.concl[1])}</span>` : `<span class="mono">${esc(shortName(e.name))}</span>`;
   const list = (xs, total, emptyText) => xs.length ? `<ul class="list">${N(xs).map(itemHtml).join('')}</ul>${total > xs.length ? `<p class="faint" style="font-size:13.5px">and ${(total - xs.length).toLocaleString()} more</p>` : ''}` : `<p class="faint">${emptyText}</p>`;
   const chips = xs => `<div class="chips">${N(xs).map(x => chipHtml(x)).join('')}</div>`;
@@ -281,6 +291,7 @@ async function viewDecl(name) {
       ${e.value ? `<details class="more"><summary>How it is defined</summary><div class="lean">${lean(e.value[0], e.value[1])}</div></details>` : ''}
       <p class="faint" style="font-size:13px">Hover over a name to see what it is; click to open it. <a href="${esc(m.url)}#L${e.line ? e.line[0] : ''}${e.line ? '-L' + e.line[1] : ''}">Source on GitHub</a>.</p></div>
     ${body}
+    ${evidenceHtml(e)}
     <details class="more section"><summary>In the same file: ${esc(row.title)}</summary><ul class="list">${neighbours.map(x => `<li><a href="#/d/${encodeURIComponent(x.name)}">${x.title ? md(x.title, true) : `<span class="mono">${esc(shortName(x.name))}</span>`}</a></li>`).join('')}</ul></details>`;
   $('#copy').addEventListener('click', () => navigator.clipboard && navigator.clipboard.writeText(e.name).then(() => { $('#copy').textContent = 'copied'; }));
   const open = $('#open-map');
@@ -292,6 +303,85 @@ function fieldsHtml(fields) {
   const parents = fields.filter(f => /^to[A-Z]/.test(f[0])), own = fields.filter(f => !/^to[A-Z]/.test(f[0]));
   return (parents.length ? `\n<span class="faint">extends</span> ${parents.map(f => lean(f[1], f[2])).join(', ')}` : '') +
     (own.length ? `\n<span class="faint">with</span>\n${own.map(f => `  ${esc(f[0])} : ${lean(f[1], f[2])}`).join('\n')}` : '');
+}
+/* ---------- what readers said: the records of the evidence store ---------- */
+// Where a declaration stands, as evidence-core says: the reviews of people count; an AI agent's are
+// shown, as an agent's, and do not make it "reviewed".
+const STANDING = {
+  covered: ['ok', '✓ Reviewed', 'A reader checked that it says what it should, and no problem reported about it is open.'],
+  uncounted: ['agent', 'Reviewed by an AI agent', 'Only AI agents have reviewed it so far, no person.'],
+  stale: ['stale', 'Reviewed on an earlier version', 'It was reviewed, but it, or something it is built from, has changed since.'],
+  problem: ['warn', '⚠ A problem is reported', 'Someone reported that it does not say what it should, and the problem is still open.'],
+  disputed: ['warn', '⚠ Reviewed, and a problem is reported', 'A reader accepted it, and a problem reported about it is still open.'],
+};
+function standingBadge(e) {
+  const st = STANDING[e.standing];
+  return st ? `<span class="badge standing ${st[0]}" title="${esc(st[2])}"><a href="#reviews">${esc(st[1])}</a></span>` : '';
+}
+const RECORD_KIND = {accept: 'Review', problem: 'Problem', question: 'Question', test: 'Test', challenge: 'Proposed test', named: 'Name'};
+const recordKind = r => RECORD_KIND[r.kind === 'review' ? r.verdict : r.kind] || r.kind;
+const STATE = {open: 'open', fixed: 'fixed', intended: 'as intended', invalid: 'not a problem', answered: 'answered',
+  met: 'met', failed: 'failed', declined: 'declined', withdrawn: 'withdrawn'};
+// What a record's version of the declaration was, when it is not this one (evidence-core's status).
+const VERSION = {
+  renamed: r => `Made when it was called <span class="mono">${esc(r.renamedFrom)}</span>.`,
+  'stale-underneath': () => 'Made on an earlier version: something it is built from has changed since.',
+  stale: () => 'Made on an earlier version: it has changed since.',
+  incomparable: () => 'Made with other versions of the tools: it cannot be compared with this version.',
+  unknown: () => 'It does not say which version it was about.',
+};
+const ghUser = login => login ? `<a href="https://github.com/${encodeURIComponent(login)}">${esc(login)}</a>` : 'someone';
+function whoHtml(by) {
+  const a = by.agent || {};
+  const who = by.kind === 'agent'
+    ? `<span class="agent" title="Written by an AI agent">AI</span> ${esc(a.tool || 'an AI agent')}${a.model ? ` <span class="faint">(${esc(a.model)})</span>` : ''}, run by ${ghUser(by.login)}`
+    : ghUser(by.login);
+  return who + (by.involvement === 'author' ? ' <span class="faint">(one of its authors)</span>' : '');
+}
+const day = at => esc(String(at || '').slice(0, 10));
+const storeLink = src => `<a href="https://github.com/${esc(src.repo)}">the ${esc(src.name)} store</a>`;
+function axisText(rubric, axis, what) {
+  const a = ((S.store.rubrics[rubric] || {}).axes || []).find(x => x.name === axis);
+  return a ? a[what] : axis === 'other' ? 'another problem' : axis;
+}
+function recordHtml(r, replies) {
+  const state = r.state && r.state !== 'stands' ? `<span class="status ${r.state === 'open' ? 'no' : 'yes'}">${esc(STATE[r.state] || r.state)}</span>` : '';
+  const head = `<div class="rec-head"><b>${esc(recordKind(r))}</b>${r.kind === 'review' && r.verdict === 'problem' && r.category ? `: ${esc(axisText(r.rubric, r.category, 'problem'))}` : ''}${state}
+    <span class="faint">· ${whoHtml(r.by)} · ${day(r.at)}${r.source ? ` · from ${storeLink(r.source)}` : ''}${r.url ? ` · <a href="${esc(r.url)}">discussion ↗</a>` : ''}</span></div>`;
+  const parts = [];
+  if (r.kind === 'named') parts.push(`<p>“${esc(r.name)}”</p>`);
+  if (r.kind === 'test') parts.push(`<p>${r.test ? `<a href="#/d/${encodeURIComponent(r.test)}" data-name="${esc(r.test)}" class="mono">${esc(r.test)}</a>` : ''} <span class="status ${r.result === 'passes' ? 'yes' : 'no'}">${esc({passes: 'proved', sorry: 'not proved yet', missing: 'not in Mathlib at this version'}[r.result] || r.result || '')}</span></p>`);
+  if (r.kind === 'challenge' && r.statement) parts.push(`<div class="lean">${esc(r.statement)}</div>`);
+  if (r.text) parts.push(`<div class="rec-text">${md(r.text)}</div>`);
+  if (r.reference && r.reference.text) parts.push(`<p class="faint">Compared with: ${r.reference.url ? `<a href="${esc(r.reference.url)}">${esc(r.reference.text)}</a>` : esc(r.reference.text)}</p>`);
+  const checked = Object.entries(r.checked || {}).filter(([, v]) => v === 'checked').map(([k]) => axisText(r.rubric, k, 'check'));
+  if (checked.length) parts.push(`<details class="more"><summary>What was checked (${checked.length})</summary><ul class="checks">${checked.map(c => `<li>${esc(c)}</li>`).join('')}</ul></details>`);
+  if ((r.caveats || []).length) parts.push(`<p class="faint">Reservations: ${r.caveats.map(c => esc(c.text || axisText(r.rubric, c.category, 'problem'))).join('; ')}</p>`);
+  if (!r.applies && VERSION[r.status]) parts.push(`<p class="faint">${VERSION[r.status](r)}</p>`);
+  const last = (r.statuses || []).slice(-1)[0];
+  if (last && last.text) parts.push(`<p class="faint">${esc(STATE[last.state] || last.state)}, by ${ghUser(last.by.login)}: ${esc(last.text)}</p>`);
+  const thread = replies.length ? `<ul class="replies">${replies.map(c => `<li><span class="faint">${whoHtml(c.by)} · ${day(c.at)}</span><div class="rec-text">${md(c.text)}</div></li>`).join('')}</ul>` : '';
+  return `<li class="rec ${r.inForce ? '' : 'old'}">${head}${parts.join('')}${thread}</li>`;
+}
+function formLink(kind, name, text, primary = false) {
+  const f = S.store.forms[kind];
+  const q = new URLSearchParams({template: f.file, title: f.title + name, decl: name, commit: S.mathlib.commit});
+  return `<a class="btn${primary ? ' primary' : ''}" href="https://github.com/${esc(S.store.repo)}/issues/new?${q}" target="_blank" rel="noopener">${esc(text)}</a>`;
+}
+function evidenceHtml(e) {
+  if (!S.store) return '';
+  const all = e.evidence || [];
+  const replies = new Map();
+  for (const c of all.filter(r => r.kind === 'comment')) replies.set(c.repliesTo, [...(replies.get(c.repliesTo) || []), c]);
+  const top = all.filter(r => r.kind !== 'comment');
+  const live = top.filter(r => r.inForce), old = top.filter(r => !r.inForce);
+  const what = e.kind === 'theorem' || e.kind === 'lemma' ? 'this statement says what the mathematics says' : 'this definition is the notion it should be';
+  return `<div class="section" id="reviews"><h2>Reviews and questions <span class="count">${top.length || ''}</span></h2>
+    <p class="hint">Readers check that ${what}, report problems and ask questions, in ${storeLink(S.store)}: each is a GitHub issue there, signed by the account that wrote it, and an AI agent's is marked as such. They are not part of Mathlib.</p>
+    ${live.length ? `<ul class="recs">${live.map(r => recordHtml(r, replies.get(r.id) || [])).join('')}</ul>` : '<p class="faint">Nobody has reviewed it yet.</p>'}
+    ${old.length ? `<details class="more"><summary>${plural(old.length, 'withdrawn or replaced record')}</summary><ul class="recs">${old.map(r => recordHtml(r, replies.get(r.id) || [])).join('')}</ul></details>` : ''}
+    <p class="actions">${formLink('review', e.name, 'Review it', true)} ${formLink('problem', e.name, 'Report a problem')} ${formLink('question', e.name, 'Ask a question')}
+      <span class="faint">On GitHub, with a GitHub account.</span></p></div>`;
 }
 const article = t => { const w = String(t).replace(/<[^>]+>/g, '').trim(); return (/^[aeiou]/i.test(w) ? 'an ' : 'a ') + w.charAt(0).toLowerCase() + w.slice(1); };
 
@@ -483,8 +573,11 @@ function viewAbout() {
   const m = S.mathlib;
   main.innerHTML = `<h1>About</h1>
     <div class="prose"><p><a href="https://github.com/leanprover-community/mathlib4">Mathlib</a> is a library of mathematics for the Lean proof assistant, written by hundreds of mathematicians and computer scientists. Lean checks every proof, down to the axioms. This site shows what Mathlib contains to readers who do not know Lean.</p>
-    <p>Everything shown comes from Mathlib itself: the explanations are its documentation, the titles of famous theorems and curriculum topics are its own catalogues, the references are its bibliography, and the links to Wikipedia and the Stacks project are its own attributes. What each notion is built from, and what each proof uses, is read from the compiled library.</p>
+    <p>Everything shown comes from Mathlib itself${S.store ? ', except the reviews (below)' : ''}: the explanations are its documentation, the titles of famous theorems and curriculum topics are its own catalogues, the references are its bibliography, and the links to Wikipedia and the Stacks project are its own attributes. What each notion is built from, and what each proof uses, is read from the compiled library.</p>
     <p>This version shows Mathlib at commit <a href="https://github.com/${esc(m.repo)}/tree/${esc(m.commit)}" class="mono">${esc(m.commit.slice(0, 10))}</a> (Lean ${esc(m.toolchain)}), read by ${esc(m.producer)}. It is built by the <a href="https://github.com/LeanTrustBuilders">LeanTrustBuilders</a> tools: <a href="https://github.com/LeanTrustBuilders/extractor">trust-extract</a> reads the library, <a href="https://github.com/LeanTrustBuilders/evidence-core">evidence-core</a> reads its documentation and catalogues and summarizes its graphs, and <a href="https://github.com/LeanTrustBuilders/mathlib-explorer">mathlib-explorer</a> lays out these pages.</p></div>
+    ${S.store ? `<h2>Reviews</h2>
+    <div class="prose"><p>Mathlib's definitions and theorems are checked by Lean, but whether a definition is the notion it is meant to be, or a statement says what its name promises, is for people to judge. Every concept and theorem page lets you say so: <b>review it</b> (what you compared it with, and what you checked), <b>report a problem</b>, or <b>ask a question</b>. Each becomes a GitHub issue in ${storeLink(S.store)}, and a record there, signed by your GitHub account.</p>
+    <p>A record is tied to the version of the declaration it was made on. When the declaration, or something it is built from, changes, its page shows the record as made on an earlier version. A review by an AI agent is marked as such, and does not by itself make a declaration "reviewed". This version shows the ${esc(S.store.name)} store${S.store.commit ? ` at <a class="mono" href="https://github.com/${esc(S.store.repo)}/tree/${esc(S.store.commit)}">${esc(S.store.commit.slice(0, 10))}</a>` : ''}${S.store.imports.length ? `, with the records about Mathlib of ${S.store.imports.map(storeLink).join(', ')}` : ''}: ${plural(S.store.records, 'record')} on ${plural(S.store.decls, 'declaration')}.</p></div>` : ''}
     <h2>The words Lean uses</h2>
     <dl class="glossary">
       ${Object.entries(KIND_WORDS).map(([, [w, t]]) => `<dt>${esc(w)}</dt><dd>${esc(t)}</dd>`).join('')}

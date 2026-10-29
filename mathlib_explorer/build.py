@@ -15,20 +15,30 @@ page loads only what it shows:
 - ``data/nodes/<k>.json``: every node's name, title, kind, module and flags, for labels and hovers;
 - ``data/m/<module>.json``: a module's docstring and its declarations in full;
 - ``data/g/<module>.json``: its declarations' edges in the concept and proof maps, for expanding them.
+
+With an evidence store (S3), each declaration's entry also carries the records about it, as
+evidence-core resolves them against the dataset (``views``: status against this version, state,
+replies), and where it stands (``decl_state``); ``site.json`` says which store, and its issue forms.
 """
 from __future__ import annotations
 
 import json
 import re
 import shutil
+import subprocess
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from evidence_core import Dataset
+from evidence_core import Dataset, Evidence
 from evidence_core import catalogs, docs as docs_mod
+from evidence_core import rubric as rb
+from evidence_core.coverage import Policy
 from evidence_core.graphs import Graphs, is_auxiliary
+from evidence_core.store import Store, with_imports
+from evidence_core.views import views_on
+from evidence_store.forms import FORMS as STORE_FORMS
 
 STATIC = Path(__file__).parent / "static"
 NODE_SHARD = 4096
@@ -87,6 +97,15 @@ class Options:
     repo: str = "leanprover-community/mathlib4"
     list_limit: int = 15    # how many of a ranked list a page shows first
     proof_limit: int = 30
+    evidence: Path | None = None    # an evidence store (S3): its directory, a git checkout
+    evidence_repo: str = ""         # its GitHub repository, whose issue forms the pages open
+    imports: Path | None = None     # the stores it imports, as `evidence-store fetch-imports` fetched them
+
+
+#: Where a declaration stands is said with the reviews of people: an AI agent's review is shown, and
+#: said to be an agent's, but does not make a declaration "reviewed" (under this policy, a declaration
+#: is ``uncounted`` when only agents accepted it).
+STANDING_POLICY = Policy()
 
 
 def humanize(segment: str) -> str:
@@ -141,6 +160,23 @@ def build(opt: Options) -> dict:
         boost[n] = boost.get(n, 0) + 3.0
     g = Graphs(ds, boost=boost)
     rev = g.reverse()
+
+    # --- what readers said: the evidence store's records, as evidence-core resolves them ----------
+    store = Store.load(opt.evidence) if opt.evidence else None
+    imported = with_imports(store, opt.imports) if store is not None and opt.imports else None
+    ev = None
+    if imported is not None:
+        ev = Evidence.resolve(imported.records, ds, sources=imported.sources)
+    elif store is not None:
+        ev = Evidence.resolve(store.records, ds)
+
+    def evidence_of(name: str) -> list[dict]:
+        views = views_on(ev, name)
+        for v in views:
+            if v["kind"] == "test":
+                # Whether the test is in Mathlib at this version, and without `sorry`.
+                v["result"], v["test"] = ev.test_result(v["test"] or "", (ev.by_id.get(v["id"]) or {}).get("test"))
+        return views
 
     # --- modules and subjects ----------------------------------------------------------------------
     modules = sorted(m["name"] for m in ds.modules)
@@ -239,6 +275,7 @@ def build(opt: Options) -> dict:
         return g.rank(xs, limit)
 
     stats = defaultdict(int)
+    recent: list[list] = []
     for m in modules:
         entries, edges = [], {}
         for d in sorted(listed_by_module.get(m, []), key=lambda d: (ds.facet_row("source", d.name) or {}).get("start", [0])[0]):
@@ -266,6 +303,13 @@ def build(opt: Options) -> dict:
                 e["famous"] = famous[d.name]
             if d.name in main_named:
                 e["main"] = main_named[d.name]
+            if ev is not None and d.name in ev.by_decl:
+                e["evidence"] = evidence_of(d.name)
+                e["standing"] = ev.decl_state(d.name, STANDING_POLICY)
+                stats["records"] += len(e["evidence"])
+                stats["withRecords"] += 1
+                recent += [[d.id, v["id"], v["kind"], v.get("verdict"), v["at"], v["by"]["label"]]
+                           for v in e["evidence"] if v["kind"] != "comment" and v["inForce"] and not v["source"]]
             if g.concept[i]:
                 built = g.built_from(i)
                 e["built"] = g.rank([x for x in built if not g.basic[x]])
@@ -360,9 +404,29 @@ def build(opt: Options) -> dict:
         "map": {"areas": [{"key": a, "title": humanize(a), "size": area_size[a], "tooling": a in TOOLING} for a in areas],
                 "edges": map_edges(area_edges, [a for a in areas if a not in TOOLING])},
         "shards": {"nodes": NODE_SHARD, "names": NAME_SHARDS},
+        "store": {
+            "repo": opt.evidence_repo, "name": store.name, "commit": git_head(opt.evidence),
+            "imports": [{"repo": i["repo"], "name": i["name"], "commit": i["commit"], "records": i["records"]}
+                        for i in imported.read] if imported else [],
+            # The store's issue forms (evidence-store's), which a page opens filled in for its declaration.
+            "forms": {kind: {"file": f["file"], "title": f["title"]} for kind, f in STORE_FORMS.items()},
+            "rubrics": {n: r.to_json() for n, r in rb.known(store.rubric).items()},
+            "records": stats["records"], "decls": stats["withRecords"],
+            # The store's newest records, for the home page.
+            "recent": sorted(recent, key=lambda r: r[4], reverse=True)[:8],
+        } if store is not None else None,
     }
     write(data / "site.json", site)
     return {**stats, "search": len(search), "nodes": len(decls)}
+
+
+def git_head(path: Path) -> str:
+    """The commit a checkout is at; "" when it is not a git checkout."""
+    try:
+        return subprocess.run(["git", "-C", str(path), "rev-parse", "HEAD"], capture_output=True, text=True,
+                              check=True).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return ""
 
 
 def map_edges(edges: dict, areas: list[str], top: int = 60) -> list:
